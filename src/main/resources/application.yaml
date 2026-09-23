@@ -3,9 +3,9 @@ spring:
     name: customer-account-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/customer_account_db
-    username: admin
-    password: admin123
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/customer_account_db}
+    username: ${DB_USERNAME:admin}
+    password: ${DB_PASSWORD:admin123}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -22,7 +22,7 @@ spring:
     locations: classpath:db/migration
 
 server:
-  port: 8080
+  port: ${PORT:8080}
 
 springdoc:
   swagger-ui:

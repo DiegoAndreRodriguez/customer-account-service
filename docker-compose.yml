@@ -10,7 +10,24 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d customer_account_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: customer-account-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/customer_account_db
+      DB_USERNAME: admin
+      DB_PASSWORD: admin123
+    ports:
+      - "8080:8080"
 
 volumes:
   postgres_data:
-  
