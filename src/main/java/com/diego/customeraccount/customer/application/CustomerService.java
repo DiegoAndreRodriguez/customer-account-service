@@ -1,4 +1,6 @@
 package com.diego.customeraccount.customer.application;
+import com.diego.customeraccount.customer.domain.port.ActiveAccountsPort;
+import com.diego.customeraccount.shared.exception.BusinessRuleViolationException;
 
 import com.diego.customeraccount.customer.application.dto.CreateCustomerRequest;
 import com.diego.customeraccount.customer.application.dto.CustomerResponse;
@@ -19,9 +21,12 @@ import java.util.UUID;
 public class CustomerService {
 
     private final CustomerRepositoryPort customerRepository;
+    private final ActiveAccountsPort activeAccountsPort;
 
-    public CustomerService(CustomerRepositoryPort customerRepository) {
+    public CustomerService(CustomerRepositoryPort customerRepository,
+                           ActiveAccountsPort activeAccountsPort) {
         this.customerRepository = customerRepository;
+        this.activeAccountsPort = activeAccountsPort;
     }
 
     /** CU-01: registrar un cliente. */
@@ -69,6 +74,10 @@ public class CustomerService {
     @Transactional
     public void deactivate(UUID id) {
         Customer customer = loadOrFail(id);
+        if (activeAccountsPort.existsActiveAccountsForCustomer(id)) {
+            throw new BusinessRuleViolationException("RN-04",
+                    "No se puede inactivar el cliente porque tiene cuentas activas");
+        }
         // RN-04 (validación de cuentas activas) se incorpora al construir el dominio Account.
         customer.deactivate();
         customerRepository.save(customer);

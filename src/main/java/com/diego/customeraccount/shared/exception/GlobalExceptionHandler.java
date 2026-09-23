@@ -1,5 +1,7 @@
 package com.diego.customeraccount.shared.exception;
 
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,7 +63,27 @@ public class GlobalExceptionHandler {
                         request.getRequestURI(),
                         details));
     }
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableBody(
+            HttpMessageNotReadableException ex, HttpServletRequest request) {
 
+        return ResponseEntity
+                .badRequest()
+                .body(ErrorResponse.of(400, "BAD_REQUEST",
+                        "El cuerpo de la petición es inválido o contiene un valor no permitido",
+                        request.getRequestURI()));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+
+        return ResponseEntity
+                .badRequest()
+                .body(ErrorResponse.of(400, "BAD_REQUEST",
+                        "El parámetro '%s' tiene un formato inválido".formatted(ex.getName()),
+                        request.getRequestURI()));
+    }
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(
             Exception ex, HttpServletRequest request) {
