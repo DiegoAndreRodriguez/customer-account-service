@@ -15,7 +15,7 @@ public class OpenApiConfig {
                 .title("Customer Account Service API")
                 .version("1.0.0")
                 .description("Servicio de gestión de clientes y cuentas bancarias. "
-                        + "Implementa arquitectura hexagonal y las reglas de negocio RN-01 a RN-08 "
+                        + "Implementa arquitectura hexagonal y las reglas de negocio RN-01 a RN-09 "
                         + "descritas en el diseño funcional.")
                 .contact(new Contact()
                         .name("Diego Andre Rodriguez")

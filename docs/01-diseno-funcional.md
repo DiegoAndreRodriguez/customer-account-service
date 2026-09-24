@@ -2,7 +2,7 @@
 
 **Proyecto:** `customer-account-service`
 **Autor:** Diego Andre Rodriguez
-**Versión:** 1.0
+**Versión:** 1.1
 **Fecha:** Septiembre 2026
 
 ---
@@ -21,7 +21,7 @@ El servicio expone una API REST para que otras aplicaciones del banco (banca por
 
 ### Dentro del alcance
 
-- Alta, consulta, actualización y baja lógica de clientes.
+- Alta, consulta, actualización, baja lógica y reactivación de clientes.
 - Apertura, consulta y cambio de estado de cuentas bancarias.
 - Validación de las reglas de negocio descritas en la sección 7.
 - Documentación de la API mediante OpenAPI/Swagger.
@@ -140,9 +140,10 @@ erDiagram
 | **RN-03** | Ni clientes ni cuentas se eliminan físicamente. La baja consiste en cambiar el estado a `INACTIVE`, preservando el historial para auditoría y trazabilidad regulatoria. | — |
 | **RN-04** | No se puede inactivar un cliente que tenga al menos una cuenta en estado `ACTIVE`. | `409 Conflict` |
 | **RN-05** | El número de cuenta lo genera el sistema; nunca es proporcionado por el usuario. | — |
-| **RN-06** | Una cuenta solo puede abrirse para un cliente existente y en estado `ACTIVE`. | `404 Not Found` / `409 Conflict` |
+| **RN-06** | Una cuenta solo puede abrirse o reactivarse si su cliente existe y está en estado `ACTIVE`. | `404 Not Found` / `409 Conflict` |
 | **RN-07** | El saldo de una cuenta nueva siempre inicia en `0.00` y nunca puede ser negativo. | `400 Bad Request` |
-| **RN-08** | El número de documento y el correo de un cliente no son modificables tras el registro, por tratarse de datos de identidad. Solo se actualizan nombres, apellidos y teléfono. | `400 Bad Request` |
+| **RN-08** | El número de documento no es modificable tras el registro, por ser el dato que identifica a la persona. Los datos de contacto (nombres, apellidos, correo y teléfono) sí pueden actualizarse; si el correo cambia, sigue aplicando RN-02. | `409 Conflict` (correo duplicado) |
+| **RN-09** | Solo se puede reactivar un cliente que esté en estado `INACTIVE`. La reactivación es una operación explícita, distinta de la edición de datos. | `409 Conflict` |
 
 **Formato del número de cuenta (RN-05):** 14 dígitos con la estructura `OOO-CC-NNNNNNNNN`, donde `OOO` es el código de oficina (fijo `001` en esta versión), `CC` identifica el tipo de cuenta y moneda, y `NNNNNNNNN` es un correlativo. Ejemplo: `00110000000123`.
 
@@ -168,6 +169,8 @@ Abrir cuenta"]
 Consultar cuentas"]
         UC7["CU-07
 Cambiar estado de cuenta"]
+        UC8["CU-08
+Reactivar cliente"]
     end
 
     Admin --> UC1
@@ -177,6 +180,7 @@ Cambiar estado de cuenta"]
     Admin --> UC5
     Admin --> UC6
     Admin --> UC7
+    Admin --> UC8
 ```
 
 ### CU-01 · Registrar cliente
@@ -206,8 +210,9 @@ Cambiar estado de cuenta"]
 | | |
 |---|---|
 | **Precondición** | El cliente existe. |
-| **Flujo principal** | El sistema actualiza nombres, apellidos y teléfono, y registra la fecha de modificación. |
-| **Flujos alternativos** | Se intenta modificar el DNI o el correo → `400 Bad Request` (RN-08). El cliente no existe → `404 Not Found`. |
+| **Flujo principal** | 1. El administrador envía nombres, apellidos, correo y teléfono. 2. Si el correo cambió, el sistema verifica que no pertenezca a otro cliente (RN-02). 3. El sistema actualiza los datos y registra la fecha de modificación. El DNI no forma parte de la operación (RN-08). |
+| **Flujos alternativos** | El nuevo correo pertenece a otro cliente → `409 Conflict`. Algún dato tiene formato inválido → `400 Bad Request`. El cliente no existe → `404 Not Found`. |
+| **Nota** | La operación se permite también sobre clientes inactivos, para actualizar sus datos antes de una reactivación (CU-08). |
 
 ### CU-04 · Dar de baja un cliente
 
@@ -246,8 +251,22 @@ Cambiar estado de cuenta"]
 | | |
 |---|---|
 | **Precondición** | La cuenta existe. |
-| **Flujo principal** | El sistema actualiza el estado de la cuenta y registra la fecha de modificación. |
-| **Flujos alternativos** | La cuenta no existe → `404 Not Found`. Se envía un estado no válido → `400 Bad Request`. |
+| **Flujo principal** | 1. El administrador indica el nuevo estado. 2. Si el nuevo estado es `ACTIVE`, el sistema verifica que el cliente de la cuenta esté activo (RN-06). 3. El sistema actualiza el estado y registra la fecha de modificación. |
+| **Flujos alternativos** | Se intenta activar una cuenta cuyo cliente está inactivo → `409 Conflict` (RN-06). La cuenta no existe → `404 Not Found`. Se envía un estado no válido → `400 Bad Request`. |
+
+### CU-08 · Reactivar un cliente
+
+> **Como** administrador, **quiero** reactivar a un cliente inactivo **para** que pueda volver a operar con el banco.
+
+| | |
+|---|---|
+| **Precondición** | El cliente existe y está en estado `INACTIVE`. |
+| **Flujo principal** | El sistema cambia el estado del cliente a `ACTIVE` y registra la fecha de modificación. Desde ese momento se le pueden abrir o reactivar cuentas. |
+| **Flujos alternativos** | El cliente ya está activo → `409 Conflict` (RN-09). El cliente no existe → `404 Not Found`. |
+| **Postcondición** | El cliente queda activo, conservando su identificador y su historial. |
+| **Nota** | En un entorno productivo, la reactivación iría precedida de una nueva verificación de identidad del cliente, fuera del alcance de esta versión. |
+
+**Recorrido completo de un cliente que regresa al banco:** actualiza sus datos de contacto (CU-03) → se reactiva (CU-08) → reactiva sus cuentas anteriores (CU-07) o abre nuevas (CU-05).
 
 ## 9. Especificación de la API REST
 
@@ -262,6 +281,7 @@ Todos los recursos se exponen bajo el prefijo `/api/v1`. El versionado en la rut
 | `GET` | `/api/v1/customers/{id}` | Obtiene un cliente | `200 OK` |
 | `PUT` | `/api/v1/customers/{id}` | Actualiza datos de contacto | `200 OK` |
 | `DELETE` | `/api/v1/customers/{id}` | Da de baja (lógica) | `204 No Content` |
+| `POST` | `/api/v1/customers/{id}/reactivation` | Reactiva un cliente inactivo | `200 OK` |
 
 ### 9.2 Recurso: Accounts
 
@@ -380,6 +400,17 @@ Cuando el error corresponde a validaciones de formato, se incluye el detalle por
 | **Trazabilidad** | Toda entidad registra fecha de creación y de última modificación; ningún registro se elimina físicamente. |
 | **Calidad** | Las reglas de negocio están cubiertas por pruebas unitarias automatizadas. |
 | **Consistencia de datos** | El esquema de base de datos se versiona con Flyway, garantizando que todos los entornos partan del mismo estado. |
+
+---
+
+## 11. Historial de cambios
+
+| Versión | Cambio | Motivo |
+|---|---|---|
+| 1.0 | Versión inicial | — |
+| 1.1 | Nuevo caso de uso CU-08 y regla RN-09 (reactivación de clientes) | Un cliente inactivo que regresaba al banco no tenía forma de volver a operar: no podía registrarse de nuevo (RN-01) ni abrir cuentas (RN-06). |
+| 1.1 | RN-08 permite actualizar el correo | El correo es un dato de contacto, no de identidad. Solo el DNI debe ser inmutable. |
+| 1.1 | RN-06 se extiende a la reactivación de cuentas | Era posible reactivar una cuenta de un cliente inactivo, contradiciendo la intención de RN-04. |
 
 ---
 

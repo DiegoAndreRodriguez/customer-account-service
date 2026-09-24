@@ -84,9 +84,10 @@ com.diego.customeraccount
 | RN-03 | No existe borrado físico: la baja cambia el estado a `INACTIVE` | — |
 | RN-04 | No se puede inactivar un cliente con cuentas activas | `409` |
 | RN-05 | El número de cuenta lo genera el sistema (`OOO-CC-NNNNNNNNN`) | — |
-| RN-06 | Solo se abren cuentas a clientes existentes y activos | `404` / `409` |
+| RN-06 | Solo se abren o reactivan cuentas de clientes existentes y activos | `404` / `409` |
 | RN-07 | Toda cuenta nueva inicia con saldo `0.00`, nunca negativo | — |
-| RN-08 | El DNI y el correo no se modifican tras el registro | — |
+| RN-08 | El DNI no se modifica tras el registro; los datos de contacto, incluido el correo, sí | `409` si el correo es de otro cliente |
+| RN-09 | Solo se reactiva un cliente inactivo | `409` |
 
 Los errores `409` por reglas de negocio incluyen el campo `ruleCode`, que referencia la regla del diseño funcional.
 
@@ -99,6 +100,7 @@ Los errores `409` por reglas de negocio incluyen el campo `ruleCode`, que refere
 | `GET` | `/api/v1/customers/{id}` | Consultar cliente |
 | `PUT` | `/api/v1/customers/{id}` | Actualizar datos de contacto |
 | `DELETE` | `/api/v1/customers/{id}` | Baja lógica de cliente |
+| `POST` | `/api/v1/customers/{id}/reactivation` | Reactivar cliente |
 | `POST` | `/api/v1/accounts` | Abrir cuenta |
 | `GET` | `/api/v1/accounts/{id}` | Consultar cuenta |
 | `GET` | `/api/v1/customers/{id}/accounts` | Listar cuentas de un cliente |
@@ -137,11 +139,11 @@ docker compose up -d postgres
 ./mvnw test
 ```
 
-La suite tiene **19 pruebas** en tres niveles:
+La suite tiene **25 pruebas** en tres niveles:
 
 | Nivel | Qué verifica | Herramientas |
 |---|---|---|
-| Unitarias de servicio | Reglas de negocio RN-01 a RN-07, con los puertos sustituidos por mocks | JUnit 5, Mockito |
+| Unitarias de servicio | Reglas de negocio RN-01 a RN-09, con los puertos sustituidos por mocks | JUnit 5, Mockito |
 | De controlador | Contrato HTTP: códigos de estado, validaciones, formato de error | MockMvc |
 | De contexto | Arranque completo de la aplicación contra PostgreSQL | `@SpringBootTest` |
 
@@ -164,7 +166,7 @@ La aplicación no contiene credenciales de entornos productivos: todo se inyecta
 
 ```mermaid
 flowchart LR
-    A["git push<br/>a master"] --> B["GitHub Actions<br/>compila y ejecuta<br/>19 pruebas"]
+    A["git push<br/>a master"] --> B["GitHub Actions<br/>compila y ejecuta<br/>25 pruebas"]
     A --> C["Render<br/>construye imagen Docker"]
     C --> D["Despliegue<br/>en producción"]
     D --> E["Health check<br/>/actuator/health"]

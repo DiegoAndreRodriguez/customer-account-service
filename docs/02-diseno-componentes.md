@@ -2,7 +2,7 @@
 
 **Proyecto:** `customer-account-service`
 **Autor:** Diego Andre Rodriguez
-**Versión:** 1.0
+**Versión:** 1.1
 **Fecha:** Septiembre 2026
 
 ---
@@ -113,7 +113,7 @@ a respuestas HTTP"]
 
         subgraph Application["⚙️ Capa de aplicación"]
             CS["CustomerService
-Implementa CU-01 a CU-04"]
+Implementa CU-01 a CU-04 y CU-08"]
             AS["AccountService
 Implementa CU-05 a CU-07"]
             ANG["AccountNumberGenerator
@@ -175,7 +175,7 @@ Spring Data"]
 |---|---|---|
 | `CustomerController` / `AccountController` | Traducir HTTP a llamadas de negocio: deserializar el cuerpo, validar formato con Bean Validation y devolver el código de estado adecuado. | No contiene reglas de negocio ni consultas a base de datos. |
 | `GlobalExceptionHandler` | Centralizar el manejo de errores y producir un formato de respuesta uniforme. | No decide reglas; solo traduce excepciones a códigos HTTP. |
-| `CustomerService` / `AccountService` | Orquestar los casos de uso y hacer cumplir las reglas de negocio RN-01 a RN-08. | No conoce HTTP ni detalles de la base de datos. |
+| `CustomerService` / `AccountService` | Orquestar los casos de uso y hacer cumplir las reglas de negocio RN-01 a RN-09. | No conoce HTTP ni detalles de la base de datos. |
 | `AccountNumberGenerator` | Construir el número de cuenta según el formato definido en RN-05. | No persiste nada. |
 | `Customer` / `Account` | Representar las entidades del dominio y su estado válido. | No conocen la infraestructura. |
 | `CustomerRepository` / `AccountRepository` | Definir el **contrato** de persistencia que necesita el dominio. | No implementan el acceso a datos; son interfaces. |
@@ -245,7 +245,7 @@ com.diego.customeraccount
 │   │       └── CustomerRepositoryPort.java → puerto de salida (interfaz)
 │   │
 │   ├── application/
-│   │   ├── CustomerService.java           → casos de uso CU-01 a CU-04
+│   │   ├── CustomerService.java           → casos de uso CU-01 a CU-04 y CU-08
 │   │   └── dto/
 │   │       ├── CreateCustomerRequest.java
 │   │       ├── UpdateCustomerRequest.java
@@ -350,6 +350,86 @@ sequenceDiagram
 
 Obsérvese que el servicio no conoce códigos HTTP: lanza excepciones de dominio y es el `GlobalExceptionHandler` quien las traduce. Esta separación permite reutilizar los casos de uso desde un adaptador de entrada distinto sin arrastrar semántica web.
 
+
+### 7.2 CU-04 · Dar de baja un cliente (flujo entre contextos)
+
+Este flujo aplica la regla RN-04, que obliga al contexto de clientes a conocer el estado de las cuentas. El contexto de clientes declara el puerto `ActiveAccountsPort` y el contexto de cuentas lo implementa; en tiempo de ejecución, Spring inyecta el adaptador. Así, `customer` nunca importa código de `account`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Administrador
+    box Contexto de clientes
+        participant Ctrl as CustomerController
+        participant Svc as CustomerService
+        participant CPort as CustomerRepositoryPort
+        participant APort as ActiveAccountsPort
+    end
+    box Contexto de cuentas
+        participant AAdp as ActiveAccountsAdapter
+    end
+    participant DB as PostgreSQL
+
+    Admin->>Ctrl: DELETE /api/v1/customers/{id}
+    Ctrl->>Svc: deactivate(id)
+    Svc->>CPort: findById(id)
+    CPort->>DB: SELECT en customers
+    DB-->>CPort: registro del cliente
+    CPort-->>Svc: cliente encontrado
+
+    alt El cliente no existe
+        Svc-->>Ctrl: ResourceNotFoundException
+        Ctrl-->>Admin: 404 Not Found
+    else El cliente existe
+        Svc->>APort: existsActiveAccountsForCustomer(id)
+        Note over APort,AAdp: El puerto lo declara clientes.<br/>La implementación vive en cuentas.
+        APort->>AAdp: implementación inyectada por Spring
+        AAdp->>DB: SELECT en accounts<br/>WHERE status = ACTIVE
+        DB-->>AAdp: true / false
+        AAdp-->>Svc: resultado
+
+        alt Tiene cuentas activas (RN-04)
+            Svc-->>Ctrl: BusinessRuleViolationException
+            Ctrl-->>Admin: 409 Conflict con ruleCode RN-04
+        else No tiene cuentas activas
+            Note over Svc: customer.deactivate()<br/>status = INACTIVE (RN-03)
+            Svc->>CPort: save(customer)
+            CPort->>DB: UPDATE en customers
+            Svc-->>Ctrl: operación completada
+            Ctrl-->>Admin: 204 No Content
+        end
+    end
+```
+
+Los recuadros agrupan a cada participante según el contexto al que pertenece. La única flecha que cruza de un recuadro al otro pasa por el puerto, nunca por una clase concreta.
+
+### 7.3 Ciclo de vida de clientes y cuentas
+
+Los estados de ambas entidades se condicionan mutuamente: el estado de las cuentas decide si un cliente puede darse de baja (RN-04), y el estado del cliente decide si una cuenta puede abrirse o reactivarse (RN-06).
+
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    state Cliente {
+        state "Activo" as CA
+        state "Inactivo" as CI
+        [*] --> CA: registro CU-01
+        CA --> CI: baja CU-04 (sin cuentas activas, RN-04)
+        CI --> CA: reactivación CU-08 (RN-09)
+    }
+
+    state Cuenta {
+        state "Activa" as AA
+        state "Inactiva" as AI
+        [*] --> AA: apertura CU-05 (cliente activo, RN-06)
+        AA --> AI: inactivación CU-07
+        AI --> AA: reactivación CU-07 (cliente activo, RN-06)
+    }
+```
+
+Un cliente que regresa al banco sigue este recorrido: actualiza sus datos de contacto, se reactiva, y luego reactiva sus cuentas anteriores o abre nuevas.
+
 ## 8. Modelo de datos y versionado del esquema
 
 El esquema se crea mediante migraciones de **Flyway**, no con la generación automática de Hibernate (`ddl-auto`). Las migraciones son archivos SQL versionados que se ejecutan en orden y quedan registrados en la tabla `flyway_schema_history`.
@@ -387,7 +467,7 @@ uniforme (JSON)"]
 |---|---|---|
 | `ResourceNotFoundException` | `404` | El identificador solicitado no existe. |
 | `DuplicateResourceException` | `409` | Violación de RN-01 o RN-02 (DNI o correo duplicado). |
-| `BusinessRuleViolationException` | `409` | Violación de RN-04, RN-06 u RN-08. |
+| `BusinessRuleViolationException` | `409` | Violación de RN-04, RN-06 o RN-09. |
 | `MethodArgumentNotValidException` | `400` | Falla la validación de formato de Bean Validation. |
 | `Exception` (genérica) | `500` | Error no previsto; se registra en el log sin exponer detalles internos al cliente. |
 
@@ -395,7 +475,7 @@ uniforme (JSON)"]
 
 | Nivel | Alcance | Herramientas |
 |---|---|---|
-| **Unitarias de servicio** | Reglas de negocio RN-01 a RN-08, con los puertos sustituidos por mocks. Es el nivel donde se concentra el mayor valor. | JUnit 5, Mockito |
+| **Unitarias de servicio** | Reglas de negocio RN-01 a RN-09, con los puertos sustituidos por mocks. Es el nivel donde se concentra el mayor valor. | JUnit 5, Mockito |
 | **De controlador** | Contrato HTTP: códigos de estado, serialización y validación de entrada. | `@WebMvcTest`, MockMvc |
 | **De contexto** | Verificación de que la aplicación arranca y el cableado de dependencias es correcto. | `@SpringBootTest` con perfil `test` y H2 |
 
