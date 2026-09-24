@@ -66,7 +66,15 @@ public class CustomerService {
     @Transactional
     public CustomerResponse update(UUID id, UpdateCustomerRequest request) {
         Customer customer = loadOrFail(id);
-        customer.updateContactInfo(request.firstName(), request.lastName(), request.phone());
+
+        // RN-02: si el correo cambia, no puede pertenecer a otro cliente
+        boolean emailChanged = !customer.getEmail().equals(request.email());
+        if (emailChanged && customerRepository.existsByEmail(request.email())) {
+            throw DuplicateResourceException.of("correo electrónico", request.email());
+        }
+
+        customer.updateContactInfo(request.firstName(), request.lastName(),
+                request.email(), request.phone());
         return CustomerMapper.toResponse(customerRepository.save(customer));
     }
 
@@ -81,6 +89,19 @@ public class CustomerService {
         // RN-04 (validación de cuentas activas) se incorpora al construir el dominio Account.
         customer.deactivate();
         customerRepository.save(customer);
+    }
+    /** CU-08: reactivar un cliente inactivo. */
+    @Transactional
+    public CustomerResponse reactivate(UUID id) {
+        Customer customer = loadOrFail(id);
+
+        if (customer.isActive()) {
+            throw new BusinessRuleViolationException("RN-09",
+                    "El cliente ya se encuentra activo");
+        }
+
+        customer.reactivate();
+        return CustomerMapper.toResponse(customerRepository.save(customer));
     }
 
     private Customer loadOrFail(UUID id) {

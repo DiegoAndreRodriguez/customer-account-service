@@ -75,6 +75,8 @@ public class AccountController {
     @PatchMapping("/api/v1/accounts/{id}/status")
     @Operation(summary = "Cambia el estado de una cuenta (CU-07)")
     @ApiResponse(responseCode = "200", description = "Estado actualizado")
+    @ApiResponse(responseCode = "409", description = "El cliente de la cuenta está inactivo (RN-06)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "400", description = "Estado no válido",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "La cuenta no existe",

@@ -12,6 +12,7 @@ import com.diego.customeraccount.shared.exception.BusinessRuleViolationException
 import com.diego.customeraccount.shared.exception.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.diego.customeraccount.account.domain.model.AccountStatus;
 
 import java.util.List;
 import java.util.UUID;
@@ -76,6 +77,18 @@ public class AccountService {
     @Transactional
     public AccountResponse changeStatus(UUID id, UpdateAccountStatusRequest request) {
         Account account = loadOrFail(id);
+
+        // RN-06: una cuenta solo se activa si su cliente está activo
+        if (request.status() == AccountStatus.ACTIVE) {
+            Customer customer = customerRepository.findById(account.getCustomerId())
+                    .orElseThrow(() -> ResourceNotFoundException.of("cliente", account.getCustomerId()));
+
+            if (!customer.isActive()) {
+                throw new BusinessRuleViolationException("RN-06",
+                        "No se puede activar una cuenta de un cliente inactivo");
+            }
+        }
+
         account.changeStatus(request.status());
         return AccountMapper.toResponse(accountRepository.save(account));
     }

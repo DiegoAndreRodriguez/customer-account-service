@@ -79,6 +79,8 @@ public class CustomerController {
     @PutMapping("/{id}")
     @Operation(summary = "Actualiza los datos de contacto de un cliente (CU-03)")
     @ApiResponse(responseCode = "200", description = "Cliente actualizado")
+    @ApiResponse(responseCode = "409", description = "El correo pertenece a otro cliente (RN-02)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "400", description = "Datos con formato inválido",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "El cliente no existe",
@@ -100,5 +102,16 @@ public class CustomerController {
     public ResponseEntity<Void> deactivate(@PathVariable UUID id) {
         customerService.deactivate(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/reactivation")
+    @Operation(summary = "Reactiva un cliente inactivo (CU-08)")
+    @ApiResponse(responseCode = "200", description = "Cliente reactivado")
+    @ApiResponse(responseCode = "404", description = "El cliente no existe",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "409", description = "El cliente ya está activo (RN-09)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    public ResponseEntity<CustomerResponse> reactivate(@PathVariable UUID id) {
+        return ResponseEntity.ok(customerService.reactivate(id));
     }
 }

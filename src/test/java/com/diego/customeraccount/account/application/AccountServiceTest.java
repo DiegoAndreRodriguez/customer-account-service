@@ -108,6 +108,26 @@ class AccountServiceTest {
         assertThat(response.status()).isEqualTo("INACTIVE");
     }
 
+    @Test
+    @DisplayName("RN-06: impide activar una cuenta cuyo cliente está inactivo")
+    void changeStatus_rejectsActivationWhenCustomerIsInactive() {
+        Customer customer = activeCustomer();
+        customer.deactivate();
+        Account account = Account.open(
+                "00110000000001", AccountType.SAVINGS, Currency.PEN, customer.getId());
+        account.changeStatus(AccountStatus.INACTIVE);
+        when(accountRepository.findById(account.getId())).thenReturn(Optional.of(account));
+        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+
+        assertThatThrownBy(() -> accountService.changeStatus(
+                account.getId(), new UpdateAccountStatusRequest(AccountStatus.ACTIVE)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasFieldOrPropertyWithValue("ruleCode", "RN-06");
+
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.INACTIVE);
+        verify(accountRepository, never()).save(any());
+    }
+
     private Customer activeCustomer() {
         return Customer.register(
                 "71234567", "Diego", "Rodriguez", "diego@example.com", "987654321");

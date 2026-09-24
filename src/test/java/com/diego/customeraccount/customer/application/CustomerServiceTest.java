@@ -9,6 +9,7 @@ import com.diego.customeraccount.customer.domain.port.CustomerRepositoryPort;
 import com.diego.customeraccount.shared.exception.BusinessRuleViolationException;
 import com.diego.customeraccount.shared.exception.DuplicateResourceException;
 import com.diego.customeraccount.shared.exception.ResourceNotFoundException;
+import com.diego.customeraccount.customer.application.dto.UpdateCustomerRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -112,6 +113,74 @@ class CustomerServiceTest {
 
         assertThatThrownBy(() -> customerService.findById(id))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("RN-08: permite actualizar el correo si no pertenece a otro cliente")
+    void update_allowsChangingEmail() {
+        Customer customer = activeCustomer();
+        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+        when(customerRepository.existsByEmail("nuevo@example.com")).thenReturn(false);
+        when(customerRepository.save(any(Customer.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CustomerResponse response = customerService.update(customer.getId(),
+                new UpdateCustomerRequest("Diego", "Rodriguez", "nuevo@example.com", "987654321"));
+
+        assertThat(response.email()).isEqualTo("nuevo@example.com");
+        assertThat(response.documentNumber()).isEqualTo("71234567");
+    }
+
+    @Test
+    @DisplayName("RN-02: rechaza cambiar el correo por uno de otro cliente")
+    void update_rejectsEmailOfAnotherCustomer() {
+        Customer customer = activeCustomer();
+        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+        when(customerRepository.existsByEmail("ocupado@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> customerService.update(customer.getId(),
+                new UpdateCustomerRequest("Diego", "Rodriguez", "ocupado@example.com", "987654321")))
+                .isInstanceOf(DuplicateResourceException.class);
+
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("RN-02: conservar el mismo correo no se considera duplicado")
+    void update_keepsSameEmailWithoutDuplicateCheck() {
+        Customer customer = activeCustomer();
+        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+        when(customerRepository.save(any(Customer.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        customerService.update(customer.getId(),
+                new UpdateCustomerRequest("Diego Andre", "Rodriguez", "diego@example.com", "999888777"));
+
+        verify(customerRepository, never()).existsByEmail(any());
+    }
+
+    @Test
+    @DisplayName("CU-08: reactiva un cliente inactivo")
+    void reactivate_setsCustomerAsActive() {
+        Customer customer = activeCustomer();
+        customer.deactivate();
+        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+        when(customerRepository.save(any(Customer.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CustomerResponse response = customerService.reactivate(customer.getId());
+
+        assertThat(response.status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    @DisplayName("RN-09: rechaza reactivar un cliente que ya está activo")
+    void reactivate_rejectsActiveCustomer() {
+        Customer customer = activeCustomer();
+        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+
+        assertThatThrownBy(() -> customerService.reactivate(customer.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasFieldOrPropertyWithValue("ruleCode", "RN-09");
+
+        verify(customerRepository, never()).save(any());
     }
 
     private CreateCustomerRequest validRequest() {

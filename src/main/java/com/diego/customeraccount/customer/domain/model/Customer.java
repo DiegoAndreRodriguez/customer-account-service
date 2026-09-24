@@ -13,7 +13,7 @@ public class Customer {
     private final String documentNumber;
     private String firstName;
     private String lastName;
-    private final String email;
+    private String email;
     private String phone;
     private CustomerStatus status;
     private final LocalDateTime createdAt;
@@ -50,10 +50,11 @@ public class Customer {
                 status, createdAt, updatedAt);
     }
 
-    /** RN-08: solo se actualizan nombres, apellidos y teléfono. */
-    public void updateContactInfo(String firstName, String lastName, String phone) {
+    /** RN-08: el DNI es inmutable; los datos de contacto, incluido el correo, se pueden actualizar. */
+    public void updateContactInfo(String firstName, String lastName, String email, String phone) {
         this.firstName = firstName;
         this.lastName = lastName;
+        this.email = email;
         this.phone = phone;
         this.updatedAt = LocalDateTime.now();
     }
@@ -61,6 +62,12 @@ public class Customer {
     /** RN-03: la baja es lógica, nunca física. */
     public void deactivate() {
         this.status = CustomerStatus.INACTIVE;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /** CU-08: reactivación explícita de un cliente inactivo. */
+    public void reactivate() {
+        this.status = CustomerStatus.ACTIVE;
         this.updatedAt = LocalDateTime.now();
     }
 
